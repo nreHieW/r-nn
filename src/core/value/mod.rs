@@ -1,24 +1,19 @@
+#![allow(dead_code)]
 use std::collections::HashSet;
-use std::fmt::{self, Display, Formatter};
-use std::hash::{Hash, Hasher};
-use std::ops::{Div, Neg, Sub};
-use std::{
-    cell::RefCell,
-    ops::{Add, Mul},
-    rc::Rc,
-};
+use std::{cell::RefCell, rc::Rc};
 type BackwardFn = fn(Value) -> ();
+pub mod value_ops;
 
-#[derive(Clone, Debug)]
-struct ValueData {
-    data: f32,
+#[derive(Debug)] // Note no clone
+pub struct ValueData {
+    pub data: f32,
     children: Vec<Value>,
-    grad: f32,
+    pub grad: f32,
     backward_fn: Option<BackwardFn>,
 }
 #[derive(Clone, Debug)]
 pub struct Value {
-    data: Rc<RefCell<ValueData>>,
+    pub data: Rc<RefCell<ValueData>>,
 }
 
 fn topological_sort(value: &Value, visited: &mut HashSet<Value>, output: &mut Vec<Value>) {
@@ -136,234 +131,57 @@ impl Value {
         out.data.borrow_mut().backward_fn = Some(f);
         out
     }
-}
 
-impl Add for &Value {
-    type Output = Value;
+    fn relu(&self) -> Value {
+        let out = Value {
+            data: Rc::new(RefCell::new(ValueData {
+                data: self.data.borrow().data.max(0.0),
+                children: vec![self.clone()],
+                grad: 0.0,
+                backward_fn: None,
+            })),
+        };
 
-    fn add(self, other: &Value) -> Value {
-        self.add_other(other)
+        let f = |out: Value| -> () {
+            let child = &out.data.borrow().children[0]; // self
+            child.data.borrow_mut().grad +=
+                (out.data.borrow().data > 0.0) as i32 as f32 * out.data.borrow().grad;
+        };
+        out.data.borrow_mut().backward_fn = Some(f);
+        out
     }
-}
 
-impl Add<i32> for &Value {
-    type Output = Value;
-
-    fn add(self, other: i32) -> Value {
-        self.add_other(&Value::new(other as f32))
+    pub fn item(&self) -> f32 {
+        self.data.borrow().data
     }
-}
 
-impl Add<&Value> for i32 {
-    type Output = Value;
-
-    fn add(self, other: &Value) -> Value {
-        Value::new(self as f32).add_other(other)
+    pub fn zero_grad(&self) {
+        self.data.borrow_mut().grad = 0.0;
     }
-}
 
-impl Add<f32> for &Value {
-    type Output = Value;
-
-    fn add(self, other: f32) -> Value {
-        self.add_other(&Value::new(other))
+    pub fn update(&self, update_amt: &Value) {
+        let g = self.data.borrow().grad;
+        self.data.borrow_mut().data += update_amt.data.borrow().data * g;
     }
-}
 
-impl Add<&Value> for f32 {
-    type Output = Value;
-
-    fn add(self, other: &Value) -> Value {
-        Value::new(self).add_other(other)
-    }
-}
-
-impl Mul for &Value {
-    type Output = Value;
-
-    fn mul(self, other: &Value) -> Value {
-        self.mul_other(other)
-    }
-}
-
-impl Mul<i32> for &Value {
-    type Output = Value;
-
-    fn mul(self, other: i32) -> Value {
-        self.mul_other(&Value::new(other as f32))
-    }
-}
-
-impl Mul<&Value> for i32 {
-    type Output = Value;
-
-    fn mul(self, other: &Value) -> Value {
-        Value::new(self as f32).mul_other(other)
-    }
-}
-
-impl Mul<f32> for &Value {
-    type Output = Value;
-
-    fn mul(self, other: f32) -> Value {
-        self.mul_other(&Value::new(other))
-    }
-}
-
-impl Mul<&Value> for f32 {
-    type Output = Value;
-
-    fn mul(self, other: &Value) -> Value {
-        other.mul_other(&Value::new(self))
-    }
-}
-
-impl Div for &Value {
-    type Output = Value;
-
-    fn div(self, other: &Value) -> Value {
-        self.mul_other(&other.pow(&Value::new(-1.0)))
-    }
-}
-
-impl Div<i32> for &Value {
-    type Output = Value;
-    fn div(self, other: i32) -> Value {
-        self.mul_other(&Value::new(1.0 / other as f32))
-    }
-}
-
-impl Div<&Value> for i32 {
-    type Output = Value;
-
-    fn div(self, other: &Value) -> Value {
-        Value::new(self as f32).mul_other(&other.pow(&Value::new(-1.0)))
-    }
-}
-
-impl Div<f32> for &Value {
-    type Output = Value;
-
-    fn div(self, other: f32) -> Value {
-        self.mul_other(&Value::new(1.0 / other))
-    }
-}
-
-impl Div<&Value> for f32 {
-    type Output = Value;
-
-    fn div(self, other: &Value) -> Value {
-        other.pow(&Value::new(-1.0)).mul_other(&Value::new(self))
-    }
-}
-
-impl Neg for &Value {
-    type Output = Value;
-
-    fn neg(self) -> Value {
-        Value::new(-self.data.borrow().data)
-    }
-}
-
-impl Sub for &Value {
-    type Output = Value;
-
-    fn sub(self, other: &Value) -> Value {
-        self.add_other(&other.neg())
-    }
-}
-impl Sub<i32> for &Value {
-    type Output = Value;
-    fn sub(self, other: i32) -> Value {
-        self.add_other(&Value::new(-other as f32))
-    }
-}
-
-impl Sub<&Value> for i32 {
-    type Output = Value;
-
-    fn sub(self, other: &Value) -> Value {
-        Value::new(self as f32).add_other(&(-other))
-    }
-}
-
-impl Sub<f32> for &Value {
-    type Output = Value;
-
-    fn sub(self, other: f32) -> Value {
-        self.add_other(&Value::new(-other))
-    }
-}
-
-impl Sub<&Value> for f32 {
-    type Output = Value;
-
-    fn sub(self, other: &Value) -> Value {
-        Value::new(self).add_other(&other.neg())
-    }
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut s = "Value(data=".to_string();
-        s.push_str(&self.data.borrow().data.to_string());
-        s.push_str(", Children=[");
-        for child in self.data.borrow().children.iter() {
-            s.push_str(&child.data.borrow().data.to_string());
-            s.push_str(", ");
+    pub fn copy(&self) -> Self {
+        // Deep copy except the children, children pointers are shared
+        Value {
+            data: Rc::new(RefCell::new(ValueData {
+                data: self.data.borrow().data,
+                children: self
+                    .data
+                    .borrow()
+                    .children
+                    .iter()
+                    .map(|x| x.clone())
+                    .collect(),
+                grad: self.data.borrow().grad,
+                backward_fn: self.data.borrow().backward_fn,
+            })),
         }
-        s.push_str("])");
-        write!(f, "{}", s)
     }
 }
-
-// impl Hash for ValueData {
-//     fn hash<H: Hasher>(&self, state: &mut H) {
-//         self.data.to_bits().hash(state);
-//         self.grad.to_bits().hash(state);
-//         self.children.hash(state);
-//         self.backward_fn.hash(state);
-//     }
-// }
-
-// impl Hash for Value {
-//     fn hash<H: Hasher>(&self, state: &mut H) {
-//         self.data.borrow().hash(state);
-//     }
-// }
-
-// impl PartialEq for ValueData {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.data == other.data
-//             && self.grad == other.grad
-//             && self.children == other.children
-//             && self.backward_fn == other.backward_fn
-//     }
-// }
-
-// impl PartialEq for Value {
-//     fn eq(&self, other: &Self) -> bool {
-//         self.data.borrow().eq(&other.data.borrow())
-//     }
-// }
-
-// impl Eq for ValueData {}
-// impl Eq for Value {}
-impl Hash for Value {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        // Hash the pointer address
-        Rc::as_ptr(&self.data).hash(state);
-    }
-}
-
-impl PartialEq for Value {
-    fn eq(&self, other: &Self) -> bool {
-        // Check if both Rc instances point to the same memory
-        Rc::ptr_eq(&self.data, &other.data)
-    }
-}
-
-impl Eq for Value {}
 
 #[cfg(test)]
 mod tests {
@@ -390,6 +208,21 @@ mod tests {
         assert_eq!(h.data.borrow().data, 2710.0);
         assert_eq!(f.data.borrow().children.len(), 2);
         assert_eq!(g.data.borrow().children.len(), 2);
+    }
+
+    #[test]
+    fn sum_test() {
+        let a = Value::new(3.0);
+        let b = Value::new(2.0);
+        let c = Value::new(0.0);
+        let items = vec![a.clone(), b.clone(), c.clone()];
+        let sum = items.iter().sum::<Value>();
+        sum.backward();
+        assert_eq!(a.data.borrow().grad, 1.0);
+        assert_eq!(b.data.borrow().grad, 1.0);
+        assert_eq!(c.data.borrow().grad, 1.0);
+        assert_eq!(sum.data.borrow().grad, 1.0);
+        assert_eq!(sum.data.borrow().data, 5.0);
     }
 
     #[test]
