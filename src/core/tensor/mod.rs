@@ -8,7 +8,7 @@ pub mod tensor_ops;
 
 use super::Value;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tensor {
     pub shape: Vec<usize>,
     pub items: Vec<Value>,
@@ -73,7 +73,10 @@ pub fn broadcast_shape(curr_shape: &Vec<usize>, other_shape: &Vec<usize>) -> Vec
                 } else if b == 1 {
                     result.push(a);
                 } else {
-                    panic!("Incompatible shapes for broadcasting");
+                    panic!(
+                        "Incompatible shapes for broadcasting, got {:?} and {:?}",
+                        curr_shape, other_shape
+                    );
                 }
             }
             (Some(&a), None) => result.push(a),
@@ -122,6 +125,25 @@ fn _get_index(mut curr_shape: Vec<usize>, idx: Vec<usize>, broadcasted_shape: Ve
 }
 
 impl Tensor {
+    pub fn new(items: Vec<f32>, shape: Vec<usize>) -> Self {
+        assert_eq!(numel(&shape), items.len());
+        let items = items.iter().map(|x| Value::new(*x)).collect();
+        Self { shape, items }
+    }
+
+    pub fn from_vec<T>(items: Vec<T>, shape: Vec<usize>) -> Self
+    where
+        T: Into<f32>,
+    {
+        assert_eq!(numel(&shape), items.len());
+        let items = items.into_iter().map(|x| Value::new(x.into())).collect();
+        Self { shape, items }
+    }
+
+    pub fn to_flattened_vec(&self) -> Vec<f32> {
+        self.items.iter().map(|x| x.item()).collect()
+    }
+
     pub fn randn(shape: Vec<usize>) -> Self {
         let n = numel(&shape);
         let normal = Normal::new(0.0, 1.0).unwrap();
@@ -145,7 +167,7 @@ impl Tensor {
     }
 
     pub fn reshape(&self, shape: Vec<usize>) -> Self {
-        assert_eq!(numel(&shape), numel(&self.shape));
+        assert_eq!(numel(&shape), numel(&self.shape), "Reshape size mismatch");
         Self {
             shape,
             items: self.items.clone(),
@@ -153,16 +175,33 @@ impl Tensor {
     }
 
     pub fn t(&self) -> Self {
+        // for 2d
         // Underlying data is the same, pointers are just rearranged
         assert_eq!(self.shape.len(), 2);
         let mut items = Vec::with_capacity(self.items.len());
         for i in 0..self.shape[1] {
             for j in 0..self.shape[0] {
-                items.push(self.items[j * self.shape[1] + i].clone());
+                items.push(self.get_item(vec![j, i]).clone());
             }
         }
         Self {
             shape: vec![self.shape[1], self.shape[0]],
+            items,
+        }
+    }
+
+    pub fn transpose(&self, dim1: i32, dim2: i32) -> Self {
+        let mut new_shape = self.shape.clone();
+        new_shape.swap(dim1 as usize, dim2 as usize);
+        let mut items = Vec::with_capacity(self.items.len());
+        let mut index_iter = IndexIterator::new(&new_shape);
+        while let Some(idx) = index_iter.next() {
+            let mut old_idx = idx.clone();
+            old_idx.swap(dim1 as usize, dim2 as usize);
+            items.push(self.get_item(old_idx).clone());
+        }
+        Self {
+            shape: new_shape,
             items,
         }
     }
@@ -211,6 +250,34 @@ impl Tensor {
         }
     }
 
+    pub fn cat(&self, other: &Tensor, dim: usize) -> Self {
+        let mut new_shape = self.shape.clone();
+        new_shape[dim] = self.shape[dim] + other.shape[dim];
+        for i in 0..self.shape.len() {
+            if i != dim {
+                assert_eq!(self.shape[i], other.shape[i]);
+            }
+        }
+        let mut result_items = Vec::with_capacity(numel(&new_shape));
+        let mut index_iter = IndexIterator::new(&new_shape);
+
+        while let Some(idx) = index_iter.next() {
+            let item = if idx[dim] < self.shape[dim] {
+                self.get_item(idx.clone()).clone()
+            } else {
+                let mut other_idx = idx.clone();
+                other_idx[dim] -= self.shape[dim];
+                other.get_item(other_idx).clone()
+            };
+            result_items.push(item);
+        }
+
+        Self {
+            shape: new_shape,
+            items: result_items,
+        }
+    }
+
     fn _get_item(&self, idx: Vec<usize>, broadcasted_shape: Vec<usize>) -> &Value {
         &self.items[_get_index(self.shape.clone(), idx, broadcasted_shape)]
     }
@@ -223,23 +290,19 @@ impl Tensor {
         let mut result_shape = Vec::with_capacity(idxs.len());
         let mut result_items = Vec::new();
 
-        // Calculate the new shape
         for range in idxs {
             result_shape.push(range.end - range.start);
         }
 
-        // Use IndexIterator to iterate over all indices in the new shape
         let index_iter = IndexIterator::new(&result_shape);
 
         for idx in index_iter {
-            // Map the index from the result shape to the original shape
             let original_idx: Vec<usize> = idx
                 .iter()
                 .zip(idxs.iter())
                 .map(|(&i, range)| range.start + i)
                 .collect();
 
-            // Get the item from the original tensor
             let item = self
                 ._get_item(original_idx, broadcasted_shape.clone())
                 .clone();
@@ -250,6 +313,29 @@ impl Tensor {
             shape: result_shape,
             items: result_items,
         }
+    }
+
+    pub fn slice(&self, idxs: &Vec<Range<usize>>) -> Self {
+        let mut idxs = idxs.clone();
+        self.shape.iter().enumerate().for_each(|(i, &size)| {
+            if idxs.len() <= i {
+                idxs.push(0..size);
+            }
+        });
+        self._get_slice(&idxs, self.shape.clone())
+    }
+
+    pub fn split(&self, split_size: usize, dim: usize) -> Vec<Self> {
+        let mut result = Vec::new();
+        let mut start = 0;
+        while start < self.shape[dim] {
+            let end = (start + split_size).min(self.shape[dim]);
+            let mut ranges = vec![0..self.shape[0], 0..self.shape[1], 0..self.shape[2]];
+            ranges[dim] = start..end;
+            result.push(self.slice(&ranges));
+            start = end;
+        }
+        result
     }
 
     fn apply_fn(&self, other: &Tensor, f: fn(&Value, &Value) -> Value) -> Tensor {
@@ -270,8 +356,8 @@ impl Tensor {
         }
     }
 
-    fn sum(&self, dim: i32) -> Tensor {
-        if dim == -1 {
+    pub fn sum(&self, dim: i32) -> Tensor {
+        if (dim == -1) || (self.shape.len() == 1) {
             let sum = self.items.iter().sum();
             Self {
                 shape: vec![1],
@@ -288,11 +374,10 @@ impl Tensor {
                 let mut sum = Value::new(0.0);
                 for i in 0..self.shape[dim] {
                     idx[dim] = i;
-                    sum += self._get_item(idx.clone(), result_shape.clone()).clone();
+                    sum += self.get_item(idx.clone()).clone();
                 }
                 result_items.push(sum);
             }
-
             Self {
                 shape: result_shape,
                 items: result_items,
@@ -300,7 +385,7 @@ impl Tensor {
         }
     }
 
-    fn pow(&self, other: &Value) -> Tensor {
+    pub fn pow(&self, other: f32) -> Tensor {
         let items = self.items.iter().map(|x| x.pow(other)).collect();
         Self {
             shape: self.shape.clone(),
@@ -308,7 +393,7 @@ impl Tensor {
         }
     }
 
-    fn exp(&self) -> Tensor {
+    pub fn exp(&self) -> Tensor {
         let items = self.items.iter().map(|x| x.exp()).collect();
         Self {
             shape: self.shape.clone(),
@@ -316,7 +401,15 @@ impl Tensor {
         }
     }
 
-    fn softmax(&self, dim: usize) -> Tensor {
+    pub fn ln(&self) -> Tensor {
+        let items = self.items.iter().map(|x| x.ln()).collect();
+        Self {
+            shape: self.shape.clone(),
+            items,
+        }
+    }
+
+    pub fn softmax(&self, dim: usize) -> Tensor {
         if dim >= self.shape.len() {
             panic!("Dimension out of range");
         }
@@ -353,7 +446,27 @@ impl Tensor {
         result
     }
 
-    fn matmul(&self, other: &Tensor) -> Tensor {
+    pub fn argmax(&self) -> usize {
+        let mut max_val = f32::NEG_INFINITY;
+        let mut max_idx = 0;
+        self.items.iter().enumerate().for_each(|(i, x)| {
+            if x.item() > max_val {
+                max_val = x.item();
+                max_idx = i;
+            }
+        });
+        max_idx
+    }
+
+    pub fn relu(&self) -> Tensor {
+        let items = self.items.iter().map(|x| x.relu()).collect();
+        Self {
+            shape: self.shape.clone(),
+            items,
+        }
+    }
+
+    pub fn matmul(&self, other: &Tensor) -> Tensor {
         if self.shape.len() == 1 && other.shape.len() == 1 {
             self.dot(other)
         } else if self.shape.len() == 1 {
@@ -548,6 +661,29 @@ mod tests {
     }
 
     #[test]
+    fn sum_test() {
+        let a = Tensor {
+            items: (0..12).map(|x| Value::new(x as f32)).collect(),
+            shape: vec![3, 4],
+        };
+        let b = a.sum(0);
+        let c = a.sum(1);
+        let d = a.sum(-1);
+        assert_eq!(b.shape, vec![4]);
+        assert_eq!(c.shape, vec![3]);
+        assert_eq!(d.shape, vec![1]);
+        let ans_b = [12.0, 15.0, 18.0, 21.0];
+        let ans_c = [6., 22., 38.];
+        let ans_d = [66.];
+        for i in 0..4 {
+            assert_eq!(b.items[i].item(), ans_b[i]);
+        }
+        for i in 0..3 {
+            assert_eq!(c.items[i].item(), ans_c[i]);
+        }
+        assert_eq!(d.items[0].item(), ans_d[0]);
+    }
+    #[test]
     fn softmax_test() {
         let a = Tensor {
             items: (1..4).map(|x| Value::new(x as f32)).collect(),
@@ -558,6 +694,37 @@ mod tests {
         assert_eq!(b.shape, vec![3]);
         for i in 0..3 {
             assert!(float_eq(b.items[i].item(), ans[i]));
+        }
+    }
+
+    #[test]
+    fn argmax_test() {
+        let a = Tensor {
+            items: vec![
+                Value::new(0.1),
+                Value::new(0.2),
+                Value::new(0.7),
+                Value::new(0.3),
+                Value::new(0.4),
+                Value::new(0.3),
+            ],
+            shape: vec![2, 3],
+        };
+        let b = a.argmax();
+        assert_eq!(b, 2);
+    }
+
+    #[test]
+    fn transpose_test() {
+        let a = Tensor {
+            items: (0..12).map(|x| Value::new(x as f32)).collect(),
+            shape: vec![2, 2, 3],
+        };
+        let b = a.transpose(1, 2);
+        let ans = [0, 3, 1, 4, 2, 5, 6, 9, 7, 10, 8, 11];
+        assert_eq!(b.shape, vec![2, 3, 2]);
+        for i in 0..12 {
+            assert_eq!(b.items[i].item(), ans[i] as f32);
         }
     }
 
@@ -594,16 +761,16 @@ mod tests {
                 items: vec![Value::new(0.5), Value::new(0.5), Value::new(0.5)],
                 shape: vec![3],
             };
-            let loss = &(&l - &y).pow(&Value::new(2.0)).sum(-1);
+            let loss = &(&l - &y).pow(2.0).sum(-1);
             loss.backward();
             assert_eq!(o.shape, vec![3]);
             assert!(float_eq(loss.get_item(vec![0]).item(), 0.7482));
             let a_grad = [0.0018, 0.0018];
             let b_grad_sum = -3.7696e-07;
             for i in 0..2 {
-                assert!(float_eq(a.items[i].data.borrow().grad, a_grad[i]));
+                assert!(float_eq(a.items[i].data.borrow().grad.unwrap(), a_grad[i]));
             }
-            let b_grad_computed_sum = b.items.iter().map(|x| x.data.borrow().grad).sum();
+            let b_grad_computed_sum = b.items.iter().map(|x| x.data.borrow().grad.unwrap()).sum();
             assert!(float_eq(b_grad_sum, b_grad_computed_sum));
         }
 
@@ -623,7 +790,7 @@ mod tests {
                 items: vec![Value::new(0.5), Value::new(0.5)],
                 shape: vec![2],
             };
-            let loss = &(&l - &y).pow(&Value::new(2.0)).sum(-1);
+            let loss = &(&l - &y).pow(2.0).sum(-1);
             loss.backward();
             assert_eq!(o.shape, vec![2, 3, 2]);
             assert_eq!(loss.shape, vec![1]);
@@ -646,7 +813,7 @@ mod tests {
                 items: vec![Value::new(0.5), Value::new(0.5), Value::new(0.5)],
                 shape: vec![3],
             };
-            let loss = &(&l - &y).pow(&Value::new(2.0)).sum(-1);
+            let loss = &(&l - &y).pow(2.0).sum(-1);
             loss.backward();
             assert_eq!(o.shape, vec![3]);
             assert!(float_eq(loss.get_item(vec![0]).item(), 0.5154));
@@ -669,7 +836,7 @@ mod tests {
                 items: vec![Value::new(0.5), Value::new(0.5)],
                 shape: vec![2],
             };
-            let loss = &(&l - &y).pow(&Value::new(2.0)).sum(-1);
+            let loss = &(&l - &y).pow(2.0).sum(-1);
             loss.backward();
             assert_eq!(o.shape, vec![2, 3, 2]);
             assert_eq!(loss.shape, vec![1]);

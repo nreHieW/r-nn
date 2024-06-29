@@ -77,6 +77,30 @@ impl Add<i32> for &Tensor {
     }
 }
 
+impl Sub<f32> for &Tensor {
+    type Output = Tensor;
+
+    fn sub(self, other: f32) -> Self::Output {
+        let items = self.items.iter().map(|x| x - other).collect::<Vec<Value>>();
+        Tensor {
+            shape: self.shape.clone(),
+            items,
+        }
+    }
+}
+
+impl Sub<i32> for &Tensor {
+    type Output = Tensor;
+
+    fn sub(self, other: i32) -> Self::Output {
+        let items = self.items.iter().map(|x| x - other).collect::<Vec<Value>>();
+        Tensor {
+            shape: self.shape.clone(),
+            items,
+        }
+    }
+}
+
 impl Mul<f32> for &Tensor {
     type Output = Tensor;
 
@@ -217,6 +241,30 @@ impl Div<&Tensor> for i32 {
     }
 }
 
+impl Sub<&Tensor> for f32 {
+    type Output = Tensor;
+
+    fn sub(self, other: &Tensor) -> Self::Output {
+        let items = other.items.iter().map(|x| self - x).collect::<Vec<Value>>();
+        Tensor {
+            shape: other.shape.clone(),
+            items,
+        }
+    }
+}
+
+impl Sub<&Tensor> for i32 {
+    type Output = Tensor;
+
+    fn sub(self, other: &Tensor) -> Self::Output {
+        let items = other.items.iter().map(|x| self - x).collect::<Vec<Value>>();
+        Tensor {
+            shape: other.shape.clone(),
+            items,
+        }
+    }
+}
+
 impl AddAssign<f32> for Tensor {
     fn add_assign(&mut self, other: f32) {
         *self = &*self + other;
@@ -246,7 +294,7 @@ impl Tensor {
         depth: usize,
     ) -> Result {
         if shape.is_empty() {
-            write!(f, "{:.1}", self.items[start_idx].item())
+            write!(f, "{:.5}", self.items[start_idx].item())
         } else {
             write!(f, "[")?;
             let dim = shape[0];

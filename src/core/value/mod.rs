@@ -8,9 +8,10 @@ pub mod value_ops;
 pub struct ValueData {
     pub data: f32,
     children: Vec<Value>,
-    pub grad: f32,
+    pub grad: Option<f32>,
     backward_fn: Option<BackwardFn>,
 }
+
 #[derive(Clone, Debug)]
 pub struct Value {
     pub data: Rc<RefCell<ValueData>>,
@@ -27,11 +28,12 @@ fn topological_sort(value: &Value, visited: &mut HashSet<Value>, output: &mut Ve
 }
 impl Value {
     pub fn new(data: f32) -> Value {
+        // println!("Creating new value with data: {}", data);
         Value {
             data: Rc::new(RefCell::new(ValueData {
                 data,
                 children: vec![],
-                grad: 0.0,
+                grad: None,
                 backward_fn: None,
             })),
         }
@@ -41,7 +43,7 @@ impl Value {
         let mut visited = HashSet::new();
         let mut sorted = vec![];
         topological_sort(self, &mut visited, &mut sorted);
-        self.data.borrow_mut().grad = 1.0;
+        self.data.borrow_mut().grad = Some(1.0);
         for value in sorted.iter().rev() {
             if let Some(f) = value.data.borrow().backward_fn {
                 f(value.clone());
@@ -54,7 +56,7 @@ impl Value {
             data: Rc::new(RefCell::new(ValueData {
                 data: self.data.borrow().data + other.data.borrow().data,
                 children: vec![self.clone(), other.clone()],
-                grad: 0.0,
+                grad: None,
                 backward_fn: None,
             })),
         };
@@ -62,9 +64,12 @@ impl Value {
         let f = |out: Value| -> () {
             let child1 = &out.data.borrow().children[0]; // self
             let child2 = &out.data.borrow().children[1]; // other
-
-            child1.data.borrow_mut().grad += 1.0 * out.data.borrow().grad;
-            child2.data.borrow_mut().grad += 1.0 * out.data.borrow().grad;
+            let child1_grad = child1.data.borrow().grad.unwrap_or(0.0);
+            child1.data.borrow_mut().grad =
+                Some(child1_grad + 1.0 * out.data.borrow().grad.unwrap_or(0.0));
+            let child2_grad = child2.data.borrow().grad.unwrap_or(0.0);
+            child2.data.borrow_mut().grad =
+                Some(child2_grad + 1.0 * out.data.borrow().grad.unwrap_or(0.0));
         };
         out.data.borrow_mut().backward_fn = Some(f);
         out
@@ -75,28 +80,42 @@ impl Value {
             data: Rc::new(RefCell::new(ValueData {
                 data: self.data.borrow().data * other.data.borrow().data,
                 children: vec![self.clone(), other.clone()],
-                grad: 0.0,
+                grad: None,
                 backward_fn: None,
             })),
         };
 
         let f = |out: Value| -> () {
+            let out_grad = out.data.borrow().grad.unwrap_or(0.0);
             let child1 = &out.data.borrow().children[0]; // self
             let child2 = &out.data.borrow().children[1]; // other
 
-            child1.data.borrow_mut().grad += child2.data.borrow().data * out.data.borrow().grad;
-            child2.data.borrow_mut().grad += child1.data.borrow().data * out.data.borrow().grad;
+            let child1_data = child1.data.borrow().data;
+            let child2_data = child2.data.borrow().data;
+
+            {
+                let mut child1_borrow = child1.data.borrow_mut();
+                child1_borrow.grad =
+                    Some(child1_borrow.grad.unwrap_or(0.0) + child2_data * out_grad);
+            }
+
+            {
+                let mut child2_borrow = child2.data.borrow_mut();
+                child2_borrow.grad =
+                    Some(child2_borrow.grad.unwrap_or(0.0) + child1_data * out_grad);
+            }
         };
         out.data.borrow_mut().backward_fn = Some(f);
         out
     }
 
-    pub fn pow(&self, other: &Value) -> Value {
+    pub fn pow(&self, other: f32) -> Value {
+        let other = Value::new(other as f32);
         let out = Value {
             data: Rc::new(RefCell::new(ValueData {
                 data: self.data.borrow().data.powf(other.data.borrow().data),
                 children: vec![self.clone(), other.clone()],
-                grad: 0.0,
+                grad: None,
                 backward_fn: None,
             })),
         };
@@ -106,9 +125,13 @@ impl Value {
             let child2 = &out.data.borrow().children[1]; // other
             let other_data = child2.data.borrow().data;
             let self_data = child1.data.borrow().data;
-
-            child1.data.borrow_mut().grad +=
-                other_data * self_data.powf(other_data - 1.0) * out.data.borrow().grad;
+            let child1_grad = child1.data.borrow().grad.unwrap_or(0.0);
+            child1.data.borrow_mut().grad = Some(
+                child1_grad
+                    + other_data
+                        * self_data.powf(other_data - 1.0)
+                        * out.data.borrow().grad.unwrap_or(0.0),
+            );
         };
         out.data.borrow_mut().backward_fn = Some(f);
         out
@@ -119,33 +142,55 @@ impl Value {
             data: Rc::new(RefCell::new(ValueData {
                 data: self.data.borrow().data.exp(),
                 children: vec![self.clone()],
-                grad: 0.0,
+                grad: None,
                 backward_fn: None,
             })),
         };
 
         let f = |out: Value| -> () {
             let child = &out.data.borrow().children[0]; // self
-            child.data.borrow_mut().grad += out.data.borrow().grad * out.data.borrow().data;
+            let g = out.data.borrow().grad.unwrap_or(0.0);
+            child.data.borrow_mut().grad = Some(g * out.data.borrow().data);
+        };
+        out.data.borrow_mut().backward_fn = Some(f);
+        out
+    }
+    pub fn ln(&self) -> Value {
+        let out = Value {
+            data: Rc::new(RefCell::new(ValueData {
+                data: self.data.borrow().data.ln(),
+                children: vec![self.clone()],
+                grad: None,
+                backward_fn: None,
+            })),
+        };
+
+        let f = |out: Value| -> () {
+            let child = &out.data.borrow().children[0]; // self
+            let g = out.data.borrow().grad.unwrap_or(0.0);
+            let child_data = child.data.borrow().data;
+            // local grad = 1 / x
+            child.data.borrow_mut().grad = Some(g * (1.0 / child_data));
         };
         out.data.borrow_mut().backward_fn = Some(f);
         out
     }
 
-    fn relu(&self) -> Value {
+    pub fn relu(&self) -> Value {
         let out = Value {
             data: Rc::new(RefCell::new(ValueData {
                 data: self.data.borrow().data.max(0.0),
                 children: vec![self.clone()],
-                grad: 0.0,
+                grad: None,
                 backward_fn: None,
             })),
         };
 
         let f = |out: Value| -> () {
             let child = &out.data.borrow().children[0]; // self
-            child.data.borrow_mut().grad +=
-                (out.data.borrow().data > 0.0) as i32 as f32 * out.data.borrow().grad;
+            let g = out.data.borrow().grad.unwrap_or(0.0);
+            let child_data = child.data.borrow().data;
+            child.data.borrow_mut().grad = Some(g * (child_data > 0.0) as i32 as f32);
         };
         out.data.borrow_mut().backward_fn = Some(f);
         out
@@ -156,12 +201,12 @@ impl Value {
     }
 
     pub fn zero_grad(&self) {
-        self.data.borrow_mut().grad = 0.0;
+        self.data.borrow_mut().grad = None;
     }
 
-    pub fn update(&self, update_amt: &Value) {
-        let g = self.data.borrow().grad;
-        self.data.borrow_mut().data += update_amt.data.borrow().data * g;
+    pub fn update(&self, update_amt: f32) {
+        let g = self.data.borrow().grad.unwrap_or(0.0); // If grad is None, then 0.0, so no update
+        self.data.borrow_mut().data += update_amt * g;
     }
 
     pub fn copy(&self) -> Self {
@@ -199,7 +244,7 @@ mod tests {
         let d = &a + &b;
         let e = &(&d * &a) * &b;
         let f = &(&e + &c) * &a;
-        let g = &f.pow(&b) + &e;
+        let g = &f.pow(2.0) + &e;
         let h = &g / &a;
         assert_eq!(d.data.borrow().data, 5.0);
         assert_eq!(e.data.borrow().data, 30.0);
@@ -218,24 +263,24 @@ mod tests {
         let items = vec![a.clone(), b.clone(), c.clone()];
         let sum = items.iter().sum::<Value>();
         sum.backward();
-        assert_eq!(a.data.borrow().grad, 1.0);
-        assert_eq!(b.data.borrow().grad, 1.0);
-        assert_eq!(c.data.borrow().grad, 1.0);
-        assert_eq!(sum.data.borrow().grad, 1.0);
+        assert_eq!(a.data.borrow().grad, Some(1.0));
+        assert_eq!(b.data.borrow().grad, Some(1.0));
+        assert_eq!(c.data.borrow().grad, Some(1.0));
+        assert_eq!(sum.data.borrow().grad, Some(1.0));
         assert_eq!(sum.data.borrow().data, 5.0);
     }
 
     #[test]
     fn indiv_backward() {
         let a = Value::new(2.0);
-        let b = a.pow(&Value::new(2.0));
+        let b = a.pow(2.0);
         b.backward();
-        assert_eq!(a.data.borrow().grad, 4.0);
-        assert_eq!(b.data.borrow().grad, 1.0);
+        assert_eq!(a.data.borrow().grad, Some(4.0));
+        assert_eq!(b.data.borrow().grad, Some(1.0));
         let x = Value::new(3.0);
         let y = x.exp();
         y.backward();
-        assert!(float_eq(x.data.borrow().grad, 20.0855));
+        assert!(float_eq(x.data.borrow().grad.unwrap(), 20.0855));
     }
 
     #[test]
@@ -269,13 +314,13 @@ mod tests {
         let d = &e + &c; // 4
         let l = &d * &f; // -8
         l.backward();
-        assert_eq!(a.data.borrow().grad, 6.0);
-        assert_eq!(b.data.borrow().grad, -4.0);
-        assert_eq!(c.data.borrow().grad, -2.0);
-        assert_eq!(d.data.borrow().grad, -2.0);
-        assert_eq!(e.data.borrow().grad, -2.0);
-        assert_eq!(f.data.borrow().grad, 4.0);
-        assert_eq!(l.data.borrow().grad, 1.0);
+        assert_eq!(a.data.borrow().grad, Some(6.0));
+        assert_eq!(b.data.borrow().grad, Some(-4.0));
+        assert_eq!(c.data.borrow().grad, Some(-2.0));
+        assert_eq!(d.data.borrow().grad, Some(-2.0));
+        assert_eq!(e.data.borrow().grad, Some(-2.0));
+        assert_eq!(f.data.borrow().grad, Some(4.0));
+        assert_eq!(l.data.borrow().grad, Some(1.0));
     }
 
     #[test]
@@ -286,6 +331,28 @@ mod tests {
         s.insert(a.clone());
         s.insert(b.clone());
         assert_eq!(s.len(), 2);
+    }
+
+    #[test]
+    fn topo() {
+        let a = Value::new(2.0);
+        let b = Value::new(-3.0);
+        let c = Value::new(10.0);
+        let f = Value::new(-2.0);
+        let e = &a * &b; // -6
+        let d = &e + &c; // 4
+        let g = &d * &f; // -8
+        let mut visited = HashSet::new();
+        let mut sorted = vec![];
+        topological_sort(&g, &mut visited, &mut sorted);
+        assert_eq!(sorted.len(), 7);
+
+        let a = Value::new(2.0);
+        let b = &a + &a;
+        let mut visited = HashSet::new();
+        let mut sorted = vec![];
+        topological_sort(&b, &mut visited, &mut sorted);
+        assert_eq!(sorted.len(), 2);
     }
 
     #[test]
@@ -332,16 +399,16 @@ mod tests {
         let o = &(&(2 * &n).exp() - 1) / &(&(2 * &n).exp() + 1);
         o.backward();
 
-        assert!(float_eq(x1.data.borrow().grad, -1.5));
-        assert!(float_eq(x2.data.borrow().grad, 0.5));
-        assert!(float_eq(w1.data.borrow().grad, 1.0));
-        assert!(float_eq(w2.data.borrow().grad, 0.0));
-        assert!(float_eq(x1w1.data.borrow().grad, 0.5));
-        assert!(float_eq(x2w2.data.borrow().grad, 0.5));
-        assert!(float_eq(x1w1x2w2.data.borrow().grad, 0.5));
-        assert!(float_eq(b.data.borrow().grad, 0.5));
-        assert!(float_eq(n.data.borrow().grad, 0.5));
-        assert!(float_eq(o.data.borrow().grad, 1.0));
+        assert!(float_eq(x1.data.borrow().grad.unwrap(), -1.5));
+        assert!(float_eq(x2.data.borrow().grad.unwrap(), 0.5));
+        assert!(float_eq(w1.data.borrow().grad.unwrap(), 1.0));
+        assert!(float_eq(w2.data.borrow().grad.unwrap(), 0.0));
+        assert!(float_eq(x1w1.data.borrow().grad.unwrap(), 0.5));
+        assert!(float_eq(x2w2.data.borrow().grad.unwrap(), 0.5));
+        assert!(float_eq(x1w1x2w2.data.borrow().grad.unwrap(), 0.5));
+        assert!(float_eq(b.data.borrow().grad.unwrap(), 0.5));
+        assert!(float_eq(n.data.borrow().grad.unwrap(), 0.5));
+        assert!(float_eq(o.data.borrow().grad.unwrap(), 1.0));
     }
 
     #[test]
@@ -349,8 +416,14 @@ mod tests {
         let a = Value::new(2.0);
         let b = &a + &a;
         b.backward();
-        assert_eq!(a.data.borrow().grad, 2.0);
-        assert_eq!(b.data.borrow().grad, 1.0);
+        assert_eq!(a.data.borrow().grad, Some(2.0));
+        assert_eq!(b.data.borrow().grad, Some(1.0));
+
+        let a = Value::new(2.0);
+        let c = &a * &a;
+        c.backward();
+        assert_eq!(a.data.borrow().grad, Some(4.0));
+        assert_eq!(c.data.borrow().grad, Some(1.0));
     }
 
     #[test]
@@ -373,10 +446,10 @@ mod tests {
         let e = &a + &b;
         let f = &d * &e;
         f.backward();
-        assert_eq!(a.data.borrow().grad, -3.0);
-        assert_eq!(b.data.borrow().grad, -8.0);
-        assert_eq!(d.data.borrow().grad, 1.0);
-        assert_eq!(e.data.borrow().grad, -6.0);
-        assert_eq!(f.data.borrow().grad, 1.0);
+        assert_eq!(a.data.borrow().grad, Some(-3.0));
+        assert_eq!(b.data.borrow().grad, Some(-8.0));
+        assert_eq!(d.data.borrow().grad, Some(1.0));
+        assert_eq!(e.data.borrow().grad, Some(-6.0));
+        assert_eq!(f.data.borrow().grad, Some(1.0));
     }
 }

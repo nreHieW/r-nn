@@ -16,13 +16,12 @@ pub fn matmul_contiguous(a: &Tensor, b: &Tensor) -> Tensor {
     if a_width != b_height {
         panic!("Matrix dimensions do not match");
     }
-
     let mut items = Vec::with_capacity(a_height * b_width); // With capacity is one allocation only
     for i in 0..a_height {
         for j in 0..b_width {
             let mut curr = Value::new(0.0);
             for k in 0..b_height {
-                curr += &a.items[(i * a_width) + k] * &b.items[(k * b_width) + j];
+                curr += a.get_item(vec![i, k]) * b.get_item(vec![k, j]);
             }
             items.push(curr);
         }
@@ -35,9 +34,9 @@ pub fn matmul_contiguous(a: &Tensor, b: &Tensor) -> Tensor {
 
 pub fn matmul_contiguous_transpose(a: &Tensor, b: &Tensor) -> Tensor {
     // Breakpoint for speed improvement is ~ 256
-    let bt = b.t();
+
+    let b = b.t();
     let a_height = a.shape[0];
-    let a_width = a.shape[1];
     let b_width = b.shape[1];
     let b_height = b.shape[0];
 
@@ -46,7 +45,7 @@ pub fn matmul_contiguous_transpose(a: &Tensor, b: &Tensor) -> Tensor {
         for j in 0..b_width {
             let mut curr = Value::new(0.0);
             for k in 0..b_height {
-                curr += &a.items[(i * a_width) + k] * &bt.items[(j * b_width) + k];
+                curr += a.get_item(vec![i, k]) * b.get_item(vec![j, k]);
             }
             items.push(curr);
         }
@@ -58,10 +57,12 @@ pub fn matmul_contiguous_transpose(a: &Tensor, b: &Tensor) -> Tensor {
 }
 
 fn _matmul2d(a: &Tensor, b: &Tensor) -> Tensor {
-    if max(a.shape[0], a.shape[1]) < 256 || max(b.shape[0], b.shape[1]) < 256 {
-        matmul_contiguous(a, b)
-    } else {
+    if (b.shape[0] == b.shape[1])
+        && (max(a.shape[0], a.shape[1]) > 256 || max(b.shape[0], b.shape[1]) > 256)
+    {
         matmul_contiguous_transpose(a, b)
+    } else {
+        matmul_contiguous(a, b)
     }
 }
 
@@ -69,8 +70,11 @@ pub fn matmulnd(a: &Tensor, b: &Tensor) -> Tensor {
     let a_shape = a.shape.clone();
     let b_shape = b.shape.clone();
 
-    if a_shape.last() != b_shape.first() {
-        panic!("Matrix dimensions do not match");
+    if a_shape[a.shape.len() - 1] != b_shape[b_shape.len() - 2] {
+        panic!(
+            "Matrix dimensions do not match, Got {:?} and {:?}",
+            a_shape, b_shape
+        );
     }
 
     // 2 d case
@@ -131,38 +135,38 @@ mod test {
 
     #[test]
     fn grad_matmul() {
-        // // (3, 3, 2) @ (2, 2) = (3, 3, 2)
-        // {
-        //     let a = Tensor {
-        //         items: (0..18).map(|x| Value::new(x as f32)).collect(),
-        //         shape: vec![3, 3, 2],
-        //     };
-        //     let b = Tensor {
-        //         items: (0..4).map(|x| Value::new(x as f32)).collect(),
-        //         shape: vec![2, 2],
-        //     };
-        //     let o = a.matmul(&b); // (3, 3, 2) @ (2, 2) = (3, 3,2)
-        //     let l = o.sum();
-        //     l.backward();
-        //     assert_eq!(o.shape, vec![3, 3, 2]);
-        //     let ans_vals = [
-        //         2., 3., 6., 11., 10., 19., 14., 27., 18., 35., 22., 43., 26., 51., 30., 59., 34.,
-        //         67.,
-        //     ];
-        //     for i in 0..18 {
-        //         assert_eq!(o.items[i].item(), ans_vals[i]);
-        //     }
-        //     let grad_a = [
-        //         1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5.,
-        //     ];
-        //     let grad_b = [72., 72., 81., 81.];
-        //     for i in 0..18 {
-        //         assert_eq!(a.items[i].data.borrow().grad, grad_a[i]);
-        //     }
-        //     for i in 0..4 {
-        //         assert_eq!(b.items[i].data.borrow().grad, grad_b[i]);
-        //     }
-        // }
+        // (3, 3, 2) @ (2, 2) = (3, 3, 2)
+        {
+            let a = Tensor {
+                items: (0..18).map(|x| Value::new(x as f32)).collect(),
+                shape: vec![3, 3, 2],
+            };
+            let b = Tensor {
+                items: (0..4).map(|x| Value::new(x as f32)).collect(),
+                shape: vec![2, 2],
+            };
+            let o = a.matmul(&b); // (3, 3, 2) @ (2, 2) = (3, 3,2)
+            let l = o.sum(-1);
+            l.backward();
+            assert_eq!(o.shape, vec![3, 3, 2]);
+            let ans_vals = [
+                2., 3., 6., 11., 10., 19., 14., 27., 18., 35., 22., 43., 26., 51., 30., 59., 34.,
+                67.,
+            ];
+            for i in 0..18 {
+                assert_eq!(o.items[i].item(), ans_vals[i]);
+            }
+            let grad_a = [
+                1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5., 1., 5.,
+            ];
+            let grad_b = [72., 72., 81., 81.];
+            for i in 0..18 {
+                assert_eq!(a.items[i].data.borrow().grad.unwrap(), grad_a[i]);
+            }
+            for i in 0..4 {
+                assert_eq!(b.items[i].data.borrow().grad.unwrap(), grad_b[i]);
+            }
+        }
 
         // (2, 1, 3, 2) @ (2, 2, 3) = (2, 2, 3, 3)
         {
@@ -191,10 +195,10 @@ mod test {
             let a_grad = [24., 42., 24., 42., 24., 42., 24., 42., 24., 42., 24., 42.];
             let b_grad = [30., 30., 30., 36., 36., 36., 30., 30., 30., 36., 36., 36.];
             for i in 0..12 {
-                assert_eq!(a.items[i].data.borrow().grad, a_grad[i]);
+                assert_eq!(a.items[i].data.borrow().grad.unwrap(), a_grad[i]);
             }
             for i in 0..12 {
-                assert_eq!(b.items[i].data.borrow().grad, b_grad[i]);
+                assert_eq!(b.items[i].data.borrow().grad.unwrap(), b_grad[i]);
             }
         }
 
@@ -232,13 +236,13 @@ mod test {
             let b_grad = [1148., 1204., 1260.];
             let c_grad = [1048., 1048.];
             for i in 0..24 {
-                assert_eq!(a.items[i].data.borrow().grad, a_grad[i]);
+                assert_eq!(a.items[i].data.borrow().grad.unwrap(), a_grad[i]);
             }
             for i in 0..3 {
-                assert_eq!(b.items[i].data.borrow().grad, b_grad[i]);
+                assert_eq!(b.items[i].data.borrow().grad.unwrap(), b_grad[i]);
             }
             for i in 0..2 {
-                assert_eq!(c.items[i].data.borrow().grad, c_grad[i]);
+                assert_eq!(c.items[i].data.borrow().grad.unwrap(), c_grad[i]);
             }
         }
     }

@@ -89,7 +89,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn simple_mlp() {
+    fn simple_mlp_raw() {
         let x = vec![2.0, 3.0, -1.0]
             .iter()
             .map(|&v| Value::new(v))
@@ -97,11 +97,10 @@ mod tests {
         let mlp = MLP::new(3, vec![4, 4, 1]);
         let y = mlp.forward(&x);
         assert_eq!(y.len(), 1);
-        dbg!(y[0].item());
     }
 
     #[test]
-    fn computational_graph() {
+    fn computational_graph_raw() {
         let n = Neuron::new(3);
         let x = vec![2.0, 3.0, -1.0]
             .iter()
@@ -110,21 +109,21 @@ mod tests {
         let y = n.forward(&x);
         y.backward();
         for param in n.parameters() {
-            assert_ne!(param.data.borrow().grad, 0.0);
+            assert!(param.data.borrow().grad.is_some());
         }
 
         let l = Layer::new(3, 1);
         let y = &l.forward(&x)[0];
         y.backward();
         for param in l.parameters() {
-            assert_ne!(param.data.borrow().grad, 0.0);
+            assert!(param.data.borrow().grad.is_some());
         }
 
         let mlp = MLP::new(3, vec![1]);
         let y = mlp.forward(&x)[0].clone();
         y.backward();
         for param in mlp.parameters() {
-            assert_ne!(param.data.borrow().grad, 0.0);
+            assert!(param.data.borrow().grad.is_some());
         }
     }
 
@@ -146,7 +145,7 @@ mod tests {
             .map(|&v| Value::new(v))
             .collect::<Vec<Value>>();
         let mlp = MLP::new(3, vec![4, 4, 1]);
-        let lr = Value::new(-0.1);
+        let lr = -0.1;
         for epoch in 0..20 {
             let y_pred = xs
                 .iter()
@@ -156,7 +155,7 @@ mod tests {
             let losses = ys
                 .iter()
                 .zip(y_pred.iter())
-                .map(|(ygt, yout)| (ygt - yout).pow(&Value::new(2.0)))
+                .map(|(ygt, yout)| (ygt - yout).pow(2.0))
                 .collect::<Vec<Value>>();
             let loss = losses.iter().sum::<Value>();
             for param in mlp.parameters() {
@@ -166,8 +165,8 @@ mod tests {
             loss.backward();
 
             for param in mlp.parameters() {
-                assert_ne!(param.data.borrow().grad, 0.0);
-                param.update(&lr);
+                assert!(param.data.borrow().grad.is_some());
+                param.update(lr);
             }
 
             println!("Epoch: {}, Loss: {}", epoch, loss.item());

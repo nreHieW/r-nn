@@ -89,7 +89,7 @@ impl Div for &Value {
     type Output = Value;
 
     fn div(self, other: &Value) -> Value {
-        self.mul_other(&other.pow(&Value::new(-1.0)))
+        self.mul_other(&other.pow(-1.0))
     }
 }
 
@@ -104,7 +104,7 @@ impl Div<&Value> for i32 {
     type Output = Value;
 
     fn div(self, other: &Value) -> Value {
-        Value::new(self as f32).mul_other(&other.pow(&Value::new(-1.0)))
+        Value::new(self as f32).mul_other(&other.pow(-1.0))
     }
 }
 
@@ -120,7 +120,7 @@ impl Div<&Value> for f32 {
     type Output = Value;
 
     fn div(self, other: &Value) -> Value {
-        other.pow(&Value::new(-1.0)).mul_other(&Value::new(self))
+        other.pow(-1.0).mul_other(&Value::new(self))
     }
 }
 
