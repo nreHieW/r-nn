@@ -33,7 +33,7 @@ impl RNN {
 
     fn forward(&self, input_idx: usize, hidden: &Tensor) -> (Tensor, Tensor) {
         let input = self.i2h.forward(&Tensor {
-            items: vec![Value::new(input_idx as f32)],
+            items: vec![Value::new(input_idx as f32, true)],
             shape: vec![1],
         });
         let x1 = self.i2h.forward(&input);
@@ -49,7 +49,7 @@ impl RNN {
         params
     }
     fn init_hidden(&self) -> Tensor {
-        Tensor::zeros(vec![1, self.hidden_size])
+        Tensor::zeros(vec![1, self.hidden_size], true)
     }
 }
 fn create_one_hot_label(label: u8) -> Vec<u8> {
@@ -72,6 +72,7 @@ fn get_dataset() -> (Vec<Vec<i32>>, Vec<Tensor>) {
         labels.push(Tensor::from_vec(
             create_one_hot_label(label),
             vec![1, num_classes as usize],
+            true,
         ));
     }
     (data, labels)
@@ -95,7 +96,7 @@ fn main() {
         for (seq, label) in data.iter().zip(labels.iter()) {
             let mut hidden = rnn.init_hidden();
 
-            let mut output_tensor = Tensor::zeros(vec![1, 3]);
+            let mut output_tensor = Tensor::zeros(vec![1, 3], true);
             for item in seq {
                 let output = rnn.forward(*item as usize, &hidden);
                 output_tensor = output.0;

@@ -11,9 +11,9 @@ pub struct Linear {
 
 impl Linear {
     pub fn new(n_dim_in: usize, n_dim_out: usize, use_bias: bool) -> Self {
-        let weights = Tensor::randn(vec![n_dim_in, n_dim_out]);
+        let weights = Tensor::randn(vec![n_dim_in, n_dim_out], true);
         if use_bias {
-            let bias = Tensor::randn(vec![n_dim_out]);
+            let bias = Tensor::randn(vec![n_dim_out], true);
             Self {
                 weights,
                 bias,
@@ -24,7 +24,7 @@ impl Linear {
         } else {
             Self {
                 weights,
-                bias: Tensor::zeros(vec![1]),
+                bias: Tensor::zeros(vec![1], true),
                 n_dim_in,
                 n_dim_out,
                 use_bias,
@@ -47,6 +47,13 @@ impl Linear {
         }
         params
     }
+
+    pub fn no_grad(&mut self) {
+        self.weights.items.iter_mut().for_each(|p| p.no_grad());
+        if self.use_bias {
+            self.bias.items.iter_mut().for_each(|p| p.no_grad());
+        }
+    }
 }
 
 #[cfg(test)]
@@ -57,7 +64,7 @@ mod tests {
     #[test]
     fn test_linear_shape() {
         let linear = Linear::new(3, 2, true);
-        let inputs = Tensor::randn(vec![3]);
+        let inputs = Tensor::randn(vec![3], true);
         let outputs = linear.forward(&inputs);
         assert_eq!(outputs.shape, vec![2]);
     }
@@ -65,7 +72,7 @@ mod tests {
     #[test]
     fn test_linear_computational_graph() {
         let linear = Linear::new(3, 2, true);
-        let inputs = Tensor::randn(vec![3]);
+        let inputs = Tensor::randn(vec![3], true);
         let outputs = linear.forward(&inputs);
         let loss = outputs.sum(0);
         loss.backward();

@@ -49,7 +49,7 @@ mod tests {
     use super::*;
     #[test]
     fn simple_mlp_nn() {
-        let x = Tensor::randn(vec![3]);
+        let x = Tensor::randn(vec![3], false);
         let mlp = MLP::new(3, vec![4, 4], 1, false);
         let y = mlp.forward(&x);
         assert_eq!(y.shape, vec![1]);

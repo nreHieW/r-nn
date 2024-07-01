@@ -40,8 +40,8 @@ impl Iterator for MnistDataset {
             None
         } else {
             Some((
-                Tensor::from_vec(images, vec![self.batch_size, 28 * 28]),
-                Tensor::from_vec(labels.concat(), vec![self.batch_size, 10]),
+                Tensor::from_vec(images, vec![self.batch_size, 28 * 28], true),
+                Tensor::from_vec(labels.concat(), vec![self.batch_size, 10], true),
             ))
         }
     }
@@ -308,7 +308,7 @@ mod tests {
         let dim = 28;
         let images = Tensor::new(vec![0.1; dim * dim * 1], vec![1, dim * dim]);
         let net = MLP::new(28 * 28, vec![256, 128], 10);
-        let y_labels = Tensor::from_vec(create_one_hot_label(2), vec![1, 10]);
+        let y_labels = Tensor::from_vec(create_one_hot_label(2), vec![1, 10], true);
 
         let y_pred = net.forward(&images);
         let loss = cross_entropy(&y_pred, &y_labels);

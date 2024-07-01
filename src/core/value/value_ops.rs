@@ -17,7 +17,7 @@ impl Add<i32> for &Value {
     type Output = Value;
 
     fn add(self, other: i32) -> Value {
-        self.add_other(&Value::new(other as f32))
+        self.add_other(&Value::new(other as f32, true))
     }
 }
 
@@ -25,7 +25,7 @@ impl Add<&Value> for i32 {
     type Output = Value;
 
     fn add(self, other: &Value) -> Value {
-        Value::new(self as f32).add_other(other)
+        Value::new(self as f32, true).add_other(other)
     }
 }
 
@@ -33,7 +33,7 @@ impl Add<f32> for &Value {
     type Output = Value;
 
     fn add(self, other: f32) -> Value {
-        self.add_other(&Value::new(other))
+        self.add_other(&Value::new(other, true))
     }
 }
 
@@ -41,7 +41,7 @@ impl Add<&Value> for f32 {
     type Output = Value;
 
     fn add(self, other: &Value) -> Value {
-        Value::new(self).add_other(other)
+        Value::new(self, true).add_other(other)
     }
 }
 
@@ -57,7 +57,7 @@ impl Mul<i32> for &Value {
     type Output = Value;
 
     fn mul(self, other: i32) -> Value {
-        self.mul_other(&Value::new(other as f32))
+        self.mul_other(&Value::new(other as f32, true))
     }
 }
 
@@ -65,7 +65,7 @@ impl Mul<&Value> for i32 {
     type Output = Value;
 
     fn mul(self, other: &Value) -> Value {
-        Value::new(self as f32).mul_other(other)
+        Value::new(self as f32, true).mul_other(other)
     }
 }
 
@@ -73,7 +73,7 @@ impl Mul<f32> for &Value {
     type Output = Value;
 
     fn mul(self, other: f32) -> Value {
-        self.mul_other(&Value::new(other))
+        self.mul_other(&Value::new(other, true))
     }
 }
 
@@ -81,7 +81,7 @@ impl Mul<&Value> for f32 {
     type Output = Value;
 
     fn mul(self, other: &Value) -> Value {
-        other.mul_other(&Value::new(self))
+        other.mul_other(&Value::new(self, true))
     }
 }
 
@@ -96,7 +96,7 @@ impl Div for &Value {
 impl Div<i32> for &Value {
     type Output = Value;
     fn div(self, other: i32) -> Value {
-        self.mul_other(&Value::new(1.0 / other as f32))
+        self.mul_other(&Value::new(1.0 / other as f32, true))
     }
 }
 
@@ -104,7 +104,7 @@ impl Div<&Value> for i32 {
     type Output = Value;
 
     fn div(self, other: &Value) -> Value {
-        Value::new(self as f32).mul_other(&other.pow(-1.0))
+        Value::new(self as f32, true).mul_other(&other.pow(-1.0))
     }
 }
 
@@ -112,7 +112,7 @@ impl Div<f32> for &Value {
     type Output = Value;
 
     fn div(self, other: f32) -> Value {
-        self.mul_other(&Value::new(1.0 / other))
+        self.mul_other(&Value::new(1.0 / other, true))
     }
 }
 
@@ -120,7 +120,7 @@ impl Div<&Value> for f32 {
     type Output = Value;
 
     fn div(self, other: &Value) -> Value {
-        other.pow(-1.0).mul_other(&Value::new(self))
+        other.pow(-1.0).mul_other(&Value::new(self, true))
     }
 }
 
@@ -142,7 +142,7 @@ impl Sub for &Value {
 impl Sub<i32> for &Value {
     type Output = Value;
     fn sub(self, other: i32) -> Value {
-        self.add_other(&Value::new(-other as f32))
+        self.add_other(&Value::new(-other as f32, true))
     }
 }
 
@@ -150,7 +150,7 @@ impl Sub<&Value> for i32 {
     type Output = Value;
 
     fn sub(self, other: &Value) -> Value {
-        Value::new(self as f32).add_other(&(-other))
+        Value::new(self as f32, true).add_other(&(-other))
     }
 }
 
@@ -158,7 +158,7 @@ impl Sub<f32> for &Value {
     type Output = Value;
 
     fn sub(self, other: f32) -> Value {
-        self.add_other(&Value::new(-other))
+        self.add_other(&Value::new(-other, true))
     }
 }
 
@@ -166,7 +166,7 @@ impl Sub<&Value> for f32 {
     type Output = Value;
 
     fn sub(self, other: &Value) -> Value {
-        Value::new(self).add_other(&other.neg())
+        Value::new(self, true).add_other(&other.neg())
     }
 }
 
@@ -202,7 +202,7 @@ impl Eq for Value {}
 
 impl Sum for Value {
     fn sum<I: Iterator<Item = Value>>(iter: I) -> Self {
-        let mut sum = Value::new(0.0);
+        let mut sum = Value::new(0.0, true);
         for i in iter {
             sum = &sum + &i;
         }
@@ -212,7 +212,7 @@ impl Sum for Value {
 
 impl<'a> Sum<&'a Value> for Value {
     fn sum<I: Iterator<Item = &'a Value>>(iter: I) -> Self {
-        let mut sum = Value::new(0.0);
+        let mut sum = Value::new(0.0, true);
         for i in iter {
             sum = &sum + i;
         }

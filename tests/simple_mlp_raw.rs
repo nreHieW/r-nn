@@ -11,9 +11,9 @@ impl Neuron {
         let mut rng = rand::thread_rng();
         let between = Uniform::from(-1.0..1.0);
         let weights = (0..n_in)
-            .map(|_| Value::new(between.sample(&mut rng)))
+            .map(|_| Value::new(between.sample(&mut rng), true))
             .collect();
-        let bias = Value::new(between.sample(&mut rng));
+        let bias = Value::new(between.sample(&mut rng), true);
         Self { weights, bias }
     }
 
@@ -92,7 +92,7 @@ mod tests {
     fn simple_mlp_raw() {
         let x = vec![2.0, 3.0, -1.0]
             .iter()
-            .map(|&v| Value::new(v))
+            .map(|&v| Value::new(v, true))
             .collect::<Vec<Value>>();
         let mlp = MLP::new(3, vec![4, 4, 1]);
         let y = mlp.forward(&x);
@@ -104,7 +104,7 @@ mod tests {
         let n = Neuron::new(3);
         let x = vec![2.0, 3.0, -1.0]
             .iter()
-            .map(|&v| Value::new(v))
+            .map(|&v| Value::new(v, true))
             .collect::<Vec<Value>>();
         let y = n.forward(&x);
         y.backward();
@@ -138,11 +138,15 @@ mod tests {
             vec![1.0, 1.0, -1.0],
         ]
         .iter()
-        .map(|v| v.iter().map(|&v| Value::new(v)).collect::<Vec<Value>>())
+        .map(|v| {
+            v.iter()
+                .map(|&v| Value::new(v, true))
+                .collect::<Vec<Value>>()
+        })
         .collect::<Vec<Vec<Value>>>();
         let ys = vec![1.0, -1.0, -1.0, 1.0]
             .iter()
-            .map(|&v| Value::new(v))
+            .map(|&v| Value::new(v, true))
             .collect::<Vec<Value>>();
         let mlp = MLP::new(3, vec![4, 4, 1]);
         let lr = -0.1;

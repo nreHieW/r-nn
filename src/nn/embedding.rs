@@ -2,14 +2,14 @@
 use crate::core::{Tensor, Value};
 
 pub struct Embedding {
-    weights: Tensor,
+    pub weights: Tensor,
     num_embeddings: usize,
     embedding_dim: usize,
 }
 
 impl Embedding {
     pub fn new(num_embeddings: usize, embedding_dim: usize) -> Self {
-        let weights = Tensor::randn(vec![num_embeddings, embedding_dim]);
+        let weights = Tensor::randn(vec![num_embeddings, embedding_dim], true);
         Embedding {
             weights,
             num_embeddings,
@@ -45,6 +45,10 @@ impl Embedding {
     pub fn parameters(&self) -> Vec<&Value> {
         self.weights.items.iter().collect::<Vec<_>>()
     }
+
+    pub fn no_grad(&mut self) {
+        self.weights.items.iter_mut().for_each(|p| p.no_grad());
+    }
 }
 
 #[cfg(test)]
@@ -55,7 +59,7 @@ mod tests {
     fn test_embedding_shape() {
         let embedding = Embedding::new(10, 3);
         let outputs = embedding.forward(&Tensor {
-            items: vec![Value::new(2.0)],
+            items: vec![Value::new(2.0, true)],
             shape: vec![1],
         });
         println!("{:?}", outputs.shape);
@@ -66,10 +70,10 @@ mod tests {
     fn test_embedding_computational_graph() {
         let embedding = Embedding::new(10, 3);
         let outputs = embedding.forward(&Tensor {
-            items: vec![Value::new(2.0)],
+            items: vec![Value::new(2.0, true)],
             shape: vec![1],
         });
-        let y = Tensor::zeros(vec![3]);
+        let y = Tensor::zeros(vec![3], true);
         let loss = (&outputs - &y).pow(2.0).sum(-1);
         loss.backward();
         assert_eq!(outputs.shape, vec![3]);

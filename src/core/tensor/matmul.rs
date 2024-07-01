@@ -19,7 +19,7 @@ pub fn matmul_contiguous(a: &Tensor, b: &Tensor) -> Tensor {
     let mut items = Vec::with_capacity(a_height * b_width); // With capacity is one allocation only
     for i in 0..a_height {
         for j in 0..b_width {
-            let mut curr = Value::new(0.0);
+            let mut curr = Value::new(0.0, true);
             for k in 0..b_height {
                 curr += a.get_item(vec![i, k]) * b.get_item(vec![k, j]);
             }
@@ -43,7 +43,7 @@ pub fn matmul_contiguous_transpose(a: &Tensor, b: &Tensor) -> Tensor {
     let mut items = Vec::with_capacity(a_height * b_width); // With capacity is one allocation only
     for i in 0..a_height {
         for j in 0..b_width {
-            let mut curr = Value::new(0.0);
+            let mut curr = Value::new(0.0, true);
             for k in 0..b_height {
                 curr += a.get_item(vec![i, k]) * b.get_item(vec![j, k]);
             }
@@ -138,11 +138,11 @@ mod test {
         // (3, 3, 2) @ (2, 2) = (3, 3, 2)
         {
             let a = Tensor {
-                items: (0..18).map(|x| Value::new(x as f32)).collect(),
+                items: (0..18).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![3, 3, 2],
             };
             let b = Tensor {
-                items: (0..4).map(|x| Value::new(x as f32)).collect(),
+                items: (0..4).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 2],
             };
             let o = a.matmul(&b); // (3, 3, 2) @ (2, 2) = (3, 3,2)
@@ -171,11 +171,11 @@ mod test {
         // (2, 1, 3, 2) @ (2, 2, 3) = (2, 2, 3, 3)
         {
             let a = Tensor {
-                items: (0..12).map(|x| Value::new(x as f32)).collect(),
+                items: (0..12).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 1, 3, 2],
             };
             let b = Tensor {
-                items: (0..12).map(|x| Value::new(x as f32)).collect(),
+                items: (0..12).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 2, 3],
             };
             let o = a.matmul(&b); // (2, 1, 3, 2) @ (2, 2, 3) = (2, 2, 3, 3)
@@ -206,15 +206,15 @@ mod test {
         // (4, 1, 2, 1) @ (1, 1, 2) = (4, 1, 2, 2)
         {
             let a = Tensor {
-                items: (10..34).map(|x| Value::new(x as f32)).collect(),
+                items: (10..34).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![4, 1, 2, 3],
             };
             let b = Tensor {
-                items: (1..4).map(|x| Value::new(x as f32)).collect(),
+                items: (1..4).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![3, 1],
             };
             let c = Tensor {
-                items: (3..5).map(|x| Value::new(x as f32)).collect(),
+                items: (3..5).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![1, 1, 2],
             };
             let o = a.matmul(&b).matmul(&c);
@@ -249,11 +249,11 @@ mod test {
     fn matmul_contiguous_test() {
         let ans = [42., 45., 48., 150., 162., 174., 258., 279., 300.];
         let a = Tensor {
-            items: (0..9).map(|x| Value::new(x as f32)).collect(),
+            items: (0..9).map(|x| Value::new(x as f32, true)).collect(),
             shape: vec![9],
         };
         let b = Tensor {
-            items: (9..18).map(|x| Value::new(x as f32)).collect(),
+            items: (9..18).map(|x| Value::new(x as f32, true)).collect(),
             shape: vec![3, 3],
         };
 
@@ -266,11 +266,11 @@ mod test {
     fn matmul_contiguous_transpose_test() {
         let ans = [42., 45., 48., 150., 162., 174., 258., 279., 300.];
         let a = Tensor {
-            items: (0..9).map(|x| Value::new(x as f32)).collect(),
+            items: (0..9).map(|x| Value::new(x as f32, true)).collect(),
             shape: vec![9],
         };
         let b = Tensor {
-            items: (9..18).map(|x| Value::new(x as f32)).collect(),
+            items: (9..18).map(|x| Value::new(x as f32, true)).collect(),
             shape: vec![3, 3],
         };
 

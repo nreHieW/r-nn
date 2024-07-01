@@ -127,16 +127,19 @@ fn _get_index(mut curr_shape: Vec<usize>, idx: Vec<usize>, broadcasted_shape: Ve
 impl Tensor {
     pub fn new(items: Vec<f32>, shape: Vec<usize>) -> Self {
         assert_eq!(numel(&shape), items.len());
-        let items = items.iter().map(|x| Value::new(*x)).collect();
+        let items = items.iter().map(|x| Value::new(*x, true)).collect();
         Self { shape, items }
     }
 
-    pub fn from_vec<T>(items: Vec<T>, shape: Vec<usize>) -> Self
+    pub fn from_vec<T>(items: Vec<T>, shape: Vec<usize>, requires_grad: bool) -> Self
     where
         T: Into<f32>,
     {
         assert_eq!(numel(&shape), items.len());
-        let items = items.into_iter().map(|x| Value::new(x.into())).collect();
+        let items = items
+            .into_iter()
+            .map(|x| Value::new(x.into(), requires_grad))
+            .collect();
         Self { shape, items }
     }
 
@@ -144,18 +147,18 @@ impl Tensor {
         self.items.iter().map(|x| x.item()).collect()
     }
 
-    pub fn randn(shape: Vec<usize>) -> Self {
+    pub fn randn(shape: Vec<usize>, requires_grad: bool) -> Self {
         let n = numel(&shape);
         let normal = Normal::new(0.0, 1.0).unwrap();
         let items = (0..n)
-            .map(|_| Value::new(normal.sample(&mut rand::thread_rng())))
+            .map(|_| Value::new(normal.sample(&mut rand::thread_rng()), requires_grad))
             .collect();
         Self { shape, items }
     }
 
-    pub fn zeros(shape: Vec<usize>) -> Self {
+    pub fn zeros(shape: Vec<usize>, requires_grad: bool) -> Self {
         let n = numel(&shape);
-        let items = vec![Value::new(0.0); n];
+        let items = vec![Value::new(0.0, requires_grad); n];
         Self { shape, items }
     }
 
@@ -210,7 +213,7 @@ impl Tensor {
         assert_eq!(self.shape.len(), 1);
         assert_eq!(other.shape.len(), 1);
         assert_eq!(self.shape[0], other.shape[0]);
-        let mut result = Value::new(0.0);
+        let mut result = Value::new(0.0, true);
         for i in 0..self.shape[0] {
             result += &self.items[i] * &other.items[i];
         }
@@ -371,7 +374,7 @@ impl Tensor {
             let mut index_iter = IndexIterator::new(&result_shape);
             while let Some(mut idx) = index_iter.next() {
                 idx.insert(dim, 0);
-                let mut sum = Value::new(0.0);
+                let mut sum = Value::new(0.0, true);
                 for i in 0..self.shape[dim] {
                     idx[dim] = i;
                     sum += self.get_item(idx.clone()).clone();
@@ -414,7 +417,7 @@ impl Tensor {
             panic!("Dimension out of range");
         }
 
-        let mut result = Tensor::zeros(self.shape.clone());
+        let mut result = Tensor::zeros(self.shape.clone(), true);
         let axis_size = self.shape[dim];
         let outer_dims: usize = self.shape[..dim].iter().product();
         let inner_dims: usize = self.shape[dim + 1..].iter().product();
@@ -427,8 +430,8 @@ impl Tensor {
                     let idx = outer * axis_size * inner_dims + i * inner_dims + inner;
                     max_val = max_val.max(self.items[idx].item());
                 }
-                let max_val = Value::new(max_val);
-                let mut exp_sum = Value::new(0.0);
+                let max_val = Value::new(max_val, true);
+                let mut exp_sum = Value::new(0.0, true);
                 for i in 0..axis_size {
                     let idx = outer * axis_size * inner_dims + i * inner_dims + inner;
                     let exp_val = (&self.items[idx] - &max_val).exp();
@@ -466,6 +469,14 @@ impl Tensor {
         }
     }
 
+    pub fn tanh(&self) -> Tensor {
+        let items = self.items.iter().map(|x| x.tanh()).collect();
+        Self {
+            shape: self.shape.clone(),
+            items,
+        }
+    }
+
     pub fn matmul(&self, other: &Tensor) -> Tensor {
         if self.shape.len() == 1 && other.shape.len() == 1 {
             self.dot(other)
@@ -493,7 +504,7 @@ mod tests {
     fn slicing_test() {
         {
             let a = Tensor {
-                items: (0..3822).map(|x| Value::new(x as f32)).collect(),
+                items: (0..3822).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![7, 26, 21],
             };
             let b = a._get_slice(&vec![0..1, 7..19, 0..21], a.shape.clone());
@@ -502,7 +513,7 @@ mod tests {
 
         {
             let a = Tensor {
-                items: (0..56).map(|x| Value::new(x as f32)).collect(),
+                items: (0..56).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![1, 2, 4, 7],
             };
             let b = a
@@ -518,7 +529,7 @@ mod tests {
 
         {
             let a = Tensor {
-                items: (0..28).map(|x| Value::new(x as f32)).collect(),
+                items: (0..28).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![4, 7],
             };
             let b = a._get_slice(&vec![1..4, 2..5], a.shape.clone());
@@ -535,11 +546,11 @@ mod tests {
         // No broadcasting
         {
             let a = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 3],
             };
             let b = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 3],
             };
             let c = &a + &b;
@@ -555,11 +566,11 @@ mod tests {
         // (2, 3) + (3,) = (2, 3)
         {
             let a = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 3],
             };
             let b = Tensor {
-                items: (0..3).map(|x| Value::new(x as f32)).collect(),
+                items: (0..3).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![3],
             };
             let c = &a + &b;
@@ -576,11 +587,11 @@ mod tests {
         // (2, 5, 2) + (5, 1) = (2, 5, 2)
         {
             let a = Tensor {
-                items: (0..20).map(|x| Value::new(x as f32)).collect(),
+                items: (0..20).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 5, 2],
             };
             let b = Tensor {
-                items: (0..5).map(|x| Value::new(x as f32)).collect(),
+                items: (0..5).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![5, 1],
             };
             let c = &a + &b;
@@ -599,11 +610,11 @@ mod tests {
         // (1, 2, 3, 1) * (2, 1, 4) = (1, 2, 3, 4)
         {
             let a = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![1, 2, 3, 1],
             };
             let b = Tensor {
-                items: (0..8).map(|x| Value::new(x as f32)).collect(),
+                items: (0..8).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 1, 4],
             };
             let c = &a * &b;
@@ -623,11 +634,11 @@ mod tests {
         // (3, 2, 3, 2) + (3, 2, 3, 2) = (3, 2, 3, 2)
         {
             let a = Tensor {
-                items: (0..36).map(|x| Value::new(x as f32)).collect(),
+                items: (0..36).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![3, 2, 3, 2],
             };
             let b = Tensor {
-                items: (1..3).map(|x| Value::new(x as f32)).collect(),
+                items: (1..3).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![1, 1, 2],
             };
             let c = &a / &b;
@@ -646,7 +657,7 @@ mod tests {
         // Scalar test
         {
             let a = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 3],
             };
 
@@ -663,7 +674,7 @@ mod tests {
     #[test]
     fn sum_test() {
         let a = Tensor {
-            items: (0..12).map(|x| Value::new(x as f32)).collect(),
+            items: (0..12).map(|x| Value::new(x as f32, true)).collect(),
             shape: vec![3, 4],
         };
         let b = a.sum(0);
@@ -686,7 +697,7 @@ mod tests {
     #[test]
     fn softmax_test() {
         let a = Tensor {
-            items: (1..4).map(|x| Value::new(x as f32)).collect(),
+            items: (1..4).map(|x| Value::new(x as f32, true)).collect(),
             shape: vec![3],
         };
         let b = a.softmax(0);
@@ -701,12 +712,12 @@ mod tests {
     fn argmax_test() {
         let a = Tensor {
             items: vec![
-                Value::new(0.1),
-                Value::new(0.2),
-                Value::new(0.7),
-                Value::new(0.3),
-                Value::new(0.4),
-                Value::new(0.3),
+                Value::new(0.1, true),
+                Value::new(0.2, true),
+                Value::new(0.7, true),
+                Value::new(0.3, true),
+                Value::new(0.4, true),
+                Value::new(0.3, true),
             ],
             shape: vec![2, 3],
         };
@@ -717,7 +728,7 @@ mod tests {
     #[test]
     fn transpose_test() {
         let a = Tensor {
-            items: (0..12).map(|x| Value::new(x as f32)).collect(),
+            items: (0..12).map(|x| Value::new(x as f32, true)).collect(),
             shape: vec![2, 2, 3],
         };
         let b = a.transpose(1, 2);
@@ -733,11 +744,11 @@ mod tests {
         // Type 1: 1d @ 1d - dot product
         {
             let a = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![6],
             };
             let b = Tensor {
-                items: (6..12).map(|x| Value::new(x as f32)).collect(),
+                items: (6..12).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![6],
             };
             let c = a.matmul(&b);
@@ -748,17 +759,21 @@ mod tests {
         // Type 2a: 1d @ 2d
         {
             let a = Tensor {
-                items: (3..5).map(|x| Value::new(x as f32)).collect(),
+                items: (3..5).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2],
             };
             let b = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 3],
             };
             let o = a.matmul(&b);
             let l = o.softmax(0);
             let y = Tensor {
-                items: vec![Value::new(0.5), Value::new(0.5), Value::new(0.5)],
+                items: vec![
+                    Value::new(0.5, true),
+                    Value::new(0.5, true),
+                    Value::new(0.5, true),
+                ],
                 shape: vec![3],
             };
             let loss = &(&l - &y).pow(2.0).sum(-1);
@@ -777,17 +792,17 @@ mod tests {
         // Type 2b 1d @ 4d
         {
             let a = Tensor {
-                items: (3..5).map(|x| Value::new(x as f32)).collect(),
+                items: (3..5).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2],
             };
             let b = Tensor {
-                items: (0..24).map(|x| Value::new(x as f32)).collect(),
+                items: (0..24).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 3, 2, 2],
             };
             let o = a.matmul(&b);
             let l = o.softmax(0);
             let y = Tensor {
-                items: vec![Value::new(0.5), Value::new(0.5)],
+                items: vec![Value::new(0.5, true), Value::new(0.5, true)],
                 shape: vec![2],
             };
             let loss = &(&l - &y).pow(2.0).sum(-1);
@@ -800,17 +815,21 @@ mod tests {
         // Type 3a 2d @ 1d
         {
             let a = Tensor {
-                items: (0..6).map(|x| Value::new(x as f32)).collect(),
+                items: (0..6).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![3, 2],
             };
             let b = Tensor {
-                items: (0..2).map(|x| Value::new(x as f32)).collect(),
+                items: (0..2).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2],
             };
             let o = a.matmul(&b);
             let l = o.softmax(0);
             let y = Tensor {
-                items: vec![Value::new(0.5), Value::new(0.5), Value::new(0.5)],
+                items: vec![
+                    Value::new(0.5, true),
+                    Value::new(0.5, true),
+                    Value::new(0.5, true),
+                ],
                 shape: vec![3],
             };
             let loss = &(&l - &y).pow(2.0).sum(-1);
@@ -823,17 +842,17 @@ mod tests {
 
         {
             let a = Tensor {
-                items: (0..24).map(|x| Value::new(x as f32)).collect(),
+                items: (0..24).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 3, 2, 2],
             };
             let b = Tensor {
-                items: (14..16).map(|x| Value::new(x as f32)).collect(),
+                items: (14..16).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2],
             };
             let o = a.matmul(&b);
             let l = o.softmax(0);
             let y = Tensor {
-                items: vec![Value::new(0.5), Value::new(0.5)],
+                items: vec![Value::new(0.5, true), Value::new(0.5, true)],
                 shape: vec![2],
             };
             let loss = &(&l - &y).pow(2.0).sum(-1);
@@ -846,11 +865,11 @@ mod tests {
         // Type 4: (3, 3, 2) @ (2, 2) = (3, 3, 2) - more comprehensive nd tests are in matmul.rs
         {
             let a = Tensor {
-                items: (0..18).map(|x| Value::new(x as f32)).collect(),
+                items: (0..18).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![3, 3, 2],
             };
             let b = Tensor {
-                items: (0..4).map(|x| Value::new(x as f32)).collect(),
+                items: (0..4).map(|x| Value::new(x as f32, true)).collect(),
                 shape: vec![2, 2],
             };
             let c = a.matmul(&b);

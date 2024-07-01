@@ -7,15 +7,15 @@ use crate::core::{Tensor, Value};
 // }
 
 pub struct LayerNorm {
-    weight: Tensor,
-    bias: Tensor,
+    pub weight: Tensor,
+    pub bias: Tensor,
     dim: usize,
 }
 
 impl LayerNorm {
     pub fn new(dim: usize) -> Self {
-        let weight = &Tensor::zeros(vec![dim]) + 1.0;
-        let bias = Tensor::zeros(vec![dim]);
+        let weight = &Tensor::zeros(vec![dim], false) + 1.0;
+        let bias = Tensor::zeros(vec![dim], false);
         Self { weight, bias, dim }
     }
 
@@ -47,6 +47,11 @@ impl LayerNorm {
         params.extend(self.bias.items.iter());
         params
     }
+
+    pub fn no_grad(&mut self) {
+        self.weight.items.iter_mut().for_each(|p| p.no_grad());
+        self.bias.items.iter_mut().for_each(|p| p.no_grad());
+    }
 }
 
 #[cfg(test)]
@@ -60,10 +65,14 @@ mod tests {
     #[test]
     fn test_layernorm() {
         let layernorm = LayerNorm::new(3);
-        let inputs = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3]);
+        let inputs = Tensor::from_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3], false);
         let outputs = layernorm.forward(&inputs);
         assert_eq!(outputs.shape, vec![2, 3]);
-        let ans = Tensor::from_vec(vec![-1.2247, 0.0, 1.2247, -1.2247, 0.0, 1.2247], vec![2, 3]);
+        let ans = Tensor::from_vec(
+            vec![-1.2247, 0.0, 1.2247, -1.2247, 0.0, 1.2247],
+            vec![2, 3],
+            false,
+        );
         for i in 0..outputs.shape[0] {
             for j in 0..outputs.shape[1] {
                 assert!(float_eq(

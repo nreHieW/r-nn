@@ -25,7 +25,7 @@ mod tests {
     #[test]
     fn test_relu_shape() {
         let relu = ReLU::new();
-        let inputs = Tensor::randn(vec![3]);
+        let inputs = Tensor::randn(vec![3], false);
         let outputs = relu.forward(&inputs);
         assert_eq!(outputs.shape, vec![3]);
     }
@@ -34,7 +34,11 @@ mod tests {
     fn test_relu() {
         let relu = ReLU::new();
         let inputs = Tensor {
-            items: vec![Value::new(1.0), Value::new(-1.0), Value::new(0.0)],
+            items: vec![
+                Value::new(1.0, true),
+                Value::new(-1.0, true),
+                Value::new(0.0, true),
+            ],
             shape: vec![3],
         };
         let outputs = relu.forward(&inputs);

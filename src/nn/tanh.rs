@@ -31,7 +31,7 @@ mod tests {
     #[test]
     fn test_tanh_shape() {
         let tanh = Tanh::new();
-        let inputs = Tensor::randn(vec![3]);
+        let inputs = Tensor::randn(vec![3], false);
         let outputs = tanh.forward(&inputs);
         assert_eq!(outputs.shape, vec![3]);
     }
@@ -40,7 +40,11 @@ mod tests {
     fn test_tanh() {
         let tanh = Tanh::new();
         let inputs = Tensor {
-            items: vec![Value::new(10.0), Value::new(-11.0), Value::new(2.0)],
+            items: vec![
+                Value::new(10.0, true),
+                Value::new(-11.0, true),
+                Value::new(2.0, true),
+            ],
             shape: vec![3],
         };
         let outputs = tanh.forward(&inputs);
