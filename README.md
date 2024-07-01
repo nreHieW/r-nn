@@ -24,7 +24,7 @@ Examples can be found in the `/examples` folder, with examples for training a Mu
 ## Optimisations
 For educational purposes, `r-nn` is written to be explicit, for example using the naive matrix multiplication algorithm (for most cases). It also saves all intermediate values. In the matrix multiplication example, this means it stores ~$3N^3$ intermediate values in addition to the matrix product. Each `Value` object is wrapped in a `Rc<RefCell>` which adds ~40 bytes of overhead to a single 32-bit floating point. 
 
-Optimisations would thus involve moving away from thinking in terms of Scalar operations to Tensor values with a single pointer to each Tensor instead.
+Optimisations would thus involve moving away from thinking in terms of Scalar operations to Tensor values with a single pointer to each Tensor instead. Gradient manipulations would then happen at the Tensor level instead.
 
 
 ## References 

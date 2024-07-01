@@ -1,3 +1,5 @@
+# GPT-2
+
 This is purely for proof of concept / educational purposes. Refer to the README at the root of the repository for optimisation related information.
 
 To load the weights:
@@ -19,3 +21,7 @@ f_path = f"{root}/{f_name}"
 arr = model.lm_head.weight.T.detach().numpy().flatten()
 np.save(f_path, arr)
 ```
+
+## References
+- [https://github.com/karpathy/build-nanogpt/blob/master/train_gpt2.py#L72](https://github.com/karpathy/build-nanogpt/blob/master/train_gpt2.py#L72)
+-[https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/tokenization_gpt2.py](https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/tokenization_gpt2.py)
